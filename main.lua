@@ -109,10 +109,10 @@ _G.EnabledBox = false
 _G.EnabledHpBar = false
 _G.EnabledName = false
 _G.EnabledDistance = false
-_G.EnabledItemDrop = true -- ฟังก์ชั่นใหม่ที่คุณเพิ่มเข้ามา
+_G.EnabledItemDrop = true
 
 local player_drawings = {}
-local item_drawings = {} -- ตารางเก็บค่าโมเดลไอเทมที่วาดอยู่บนจอ
+local item_drawings = {}
 
 -- // CORE VARIABLES (LOOT MAGNET)
 local MagnetConfig = { Enabled = false, Radius = 2000, Ignore = { Common = false, Uncommon = false, Rare = false, Epic = false, Legendary = false, Omega = false, Default = false } }
@@ -145,7 +145,7 @@ ESPTab:Toggle({ Title = "Show Box (Hollow & Dynamic)", Default = false, Callback
 ESPTab:Toggle({ Title = "Show Health", Default = false, Callback = function(s) _G.EnabledHpBar = s end })
 ESPTab:Toggle({ Title = "Show Name (Scaled Tiny)", Default = false, Callback = function(s) _G.EnabledName = s end })
 ESPTab:Toggle({ Title = "Show Distance (m)", Default = false, Callback = function(s) _G.EnabledDistance = s end })
-ESPTab:Toggle({ Title = "Show Dropped Items (Drawing API)", Default = true, Callback = function(s) _G.EnabledItemDrop = s end }) -- เปลี่ยนมาคุมตัวแปรใหม่ตรงนี้แล้ว
+ESPTab:Toggle({ Title = "Show Dropped Items (Drawing API)", Default = true, Callback = function(s) _G.EnabledItemDrop = s end })
 
 -- Auto Loot Tab
 LootTab:Toggle({ Title = "Enable Auto PickUp", Default = false, Callback = function(s) MagnetConfig.Enabled = s end })
@@ -219,7 +219,7 @@ local function IsHoldingAllowedGun(args)
     return false
 end
 
--- // ADVANCED ANTI-ANTI-AIM RESOLVER (PRECISE ACCELERATION DETECTION)
+-- // ADVANCED ANTI-ANTI-AIM RESOLVER
 local function GetResolvedVelocity(target, root)
     if not root or not target.Character then return Vector3.zero end
     
@@ -439,7 +439,7 @@ local function GetColorFromRarity(itemObj)
     end
 end
 
--- // HIGH-PERFORMANCE LOW-LATENCY HOLLOW ESP BOX & SCALED SYSTEM
+-- // HIGH-PERFORMANCE LOW-LATENCY HOLLOW ESP BOX SYSTEM
 local function CreateESP(player)
     if player == LocalPlayer then return end
     if player_drawings[player] then return end
@@ -581,7 +581,6 @@ RunService.RenderStepped:Connect(function(delta)
     -- ITEM DROPPED ESP PIPELINE (INTEGRATED SYSTEM)
     local dropfolder = getDroppedFolder()
     
-    -- ทำการล้างวาดเส้นไอเทมที่ถูกลบออกจากเกมไปแล้ว หรือเมื่อสั่งปิดฟังก์ชัน
     for i, d in pairs(item_drawings) do
         if not i or not i.Parent or not _G.EnabledItemDrop then
             if d.box then d.box:Remove() end
@@ -591,7 +590,6 @@ RunService.RenderStepped:Connect(function(delta)
         end
     end
 
-    -- สั่งลูปสแกนและวาดไอเทมถ้าปุ่มเปิดใช้งานอยู่
     if _G.EnabledItemDrop and dropfolder then
         for _, item in pairs(dropfolder:GetChildren()) do
             if item:IsA("Model") and item:FindFirstChild("PickUpZone") and not item:GetAttribute('Locked') then
@@ -640,7 +638,7 @@ RunService.RenderStepped:Connect(function(delta)
                             itemesp.name.Color = Color3.fromRGB(255, 255, 255)
                         end
                     else 
-                        itemesp.box.Color = Color3.fromRGB(85, 255, 127) -- ให้สีเงินเขียวตามสไตล์ของสคริปต์หลัก
+                        itemesp.box.Color = Color3.fromRGB(85, 255, 127)
                         itemesp.name.Color = Color3.fromRGB(85, 255, 127)
                     end
 
