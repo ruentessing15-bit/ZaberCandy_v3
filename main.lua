@@ -109,14 +109,14 @@ _G.EnabledBox = false
 _G.EnabledHpBar = false
 _G.EnabledName = false
 _G.EnabledDistance = false
+_G.EnabledItemDrop = true -- ฟังก์ชั่นใหม่ที่คุณเพิ่มเข้ามา
 
 local player_drawings = {}
+local item_drawings = {} -- ตารางเก็บค่าโมเดลไอเทมที่วาดอยู่บนจอ
 
 -- // CORE VARIABLES (LOOT MAGNET)
 local MagnetConfig = { Enabled = false, Radius = 2000, Ignore = { Common = false, Uncommon = false, Rare = false, Epic = false, Legendary = false, Omega = false, Default = false } }
 local ItemDatabase = {}
-local ESP_Settings = { DroppedItems = false }
-local DropESP_Cache = {}
 
 -- ==========================================
 -- // CONNECT UI TO INTERFACES
@@ -145,7 +145,7 @@ ESPTab:Toggle({ Title = "Show Box (Hollow & Dynamic)", Default = false, Callback
 ESPTab:Toggle({ Title = "Show Health", Default = false, Callback = function(s) _G.EnabledHpBar = s end })
 ESPTab:Toggle({ Title = "Show Name (Scaled Tiny)", Default = false, Callback = function(s) _G.EnabledName = s end })
 ESPTab:Toggle({ Title = "Show Distance (m)", Default = false, Callback = function(s) _G.EnabledDistance = s end })
-ESPTab:Toggle({ Title = "Show Dropped Items (Legacy Method)", Default = false, Callback = function(s) ESP_Settings.DroppedItems = s end })
+ESPTab:Toggle({ Title = "Show Dropped Items (Drawing API)", Default = true, Callback = function(s) _G.EnabledItemDrop = s end }) -- เปลี่ยนมาคุมตัวแปรใหม่ตรงนี้แล้ว
 
 -- Auto Loot Tab
 LootTab:Toggle({ Title = "Enable Auto PickUp", Default = false, Callback = function(s) MagnetConfig.Enabled = s end })
@@ -246,7 +246,6 @@ local function GetResolvedVelocity(target, root)
     local engineVel = trackingPart.AssemblyLinearVelocity
     local realVel = engineVel
     
-    -- Anti-Anti-Aim Overrider: Bypasses heavy desync desynchronization and spinning exploits
     if engineVel.Magnitude > 150 or math.abs(engineVel.Y) > 150 or (engineVel - data.LastVel).Magnitude > 200 then
         if calculatedVel.Magnitude > 0.1 then
             realVel = calculatedVel
@@ -405,6 +404,7 @@ end)
 
 -- // ESP UTILITY FUNCTIONS
 local function draw(drawingType, properties)
+    if not Drawing then return nil end
     local drawing = Drawing.new(drawingType)
     for index, value in pairs(properties) do drawing[index] = value end
     return drawing
@@ -420,14 +420,33 @@ local function Get2dWorld(part)
     return Vector2.new(0, 0), 0, false
 end
 
+local function GetColorFromRarity(itemObj)
+    local rarity = itemObj:GetAttribute('RarityName')
+    if rarity == "Common" then
+        return Color3.fromRGB(255, 255, 255)
+    elseif rarity == "UnCommon" then
+        return Color3.fromRGB(2, 177, 17)
+    elseif rarity == "Rare" then
+        return Color3.fromRGB(1, 132, 255)
+    elseif rarity == "Legendary" then
+        return Color3.fromRGB(255, 160, 6)
+    elseif rarity == "Epic" then
+        return Color3.fromRGB(150, 2, 255)
+    elseif rarity == "Omega" then 
+        return Color3.fromRGB(255, 6, 10)
+    else 
+        return Color3.fromRGB(255, 255, 255)
+    end
+end
+
 -- // HIGH-PERFORMANCE LOW-LATENCY HOLLOW ESP BOX & SCALED SYSTEM
 local function CreateESP(player)
     if player == LocalPlayer then return end
     if player_drawings[player] then return end
     player_drawings[player] = {
-        box = draw("Square", {Visible = false, Color = Color3.fromRGB(255, 255, 255), Thickness = 1.2, Transparency = 1, Filled = false}), -- Pure Hollow Empty Box
+        box = draw("Square", {Visible = false, Color = Color3.fromRGB(255, 255, 255), Thickness = 1.2, Transparency = 1, Filled = false}),
         hpbar = draw("Line", {Visible = false, Color = Color3.new(0, 1, 0), Thickness = 1.5}),
-        name = draw("Text", {Visible = false, Color = Color3.new(1, 1, 1), Size = 10, Center = true, Outline = true, OutlineColor = Color3.new(0, 0, 0), Text = player.Name}), -- Dynamic small font size matching scan layout
+        name = draw("Text", {Visible = false, Color = Color3.new(1, 1, 1), Size = 10, Center = true, Outline = true, OutlineColor = Color3.new(0, 0, 0), Text = player.Name}),
         dist = draw("Text", {Visible = false, Color = Color3.new(1, 1, 1), Size = 9, Center = true, Outline = true, OutlineColor = Color3.new(0, 0, 0), Text = ""})
     }
 end
@@ -452,46 +471,7 @@ local function getDroppedFolder()
     return nil
 end
 
--- // DROPPED ITEMS LEGACY HOOK (UNCHANGED BY REQUEST)
-task.spawn(function()
-    while task.wait(1) do
-        if not ESP_Settings.DroppedItems then
-            for item, bg in pairs(DropESP_Cache) do if bg then bg:Destroy() end end
-            DropESP_Cache = {}
-            continue
-        end
-
-        local droppedFolder = getDroppedFolder()
-        if droppedFolder then
-            for item, bg in pairs(DropESP_Cache) do
-                if not item.Parent or not item.Parent:IsDescendantOf(workspace) then
-                    if bg then bg:Destroy() end
-                    DropESP_Cache[item] = nil
-                end
-            end
-
-            for _, item in pairs(droppedFolder:GetChildren()) do
-                if not DropESP_Cache[item] then
-                    local part = item:IsA("BasePart") and item or item:FindFirstChildWhichIsA("BasePart")
-                    if part then
-                        local rarity = item:GetAttribute("Rarity") or (item.Name:lower():match("money") and "Money") or "Common"
-                        local exactColor = RARITY_COLORS[rarity] or RARITY_COLORS["Default"]
-                  
-                        local bg = Instance.new("BillboardGui", part)
-                        bg.Size = UDim2.new(0, 100, 0, 30); bg.AlwaysOnTop = true; bg.LightInfluence = 0; bg.MaxDistance = math.huge; bg.ExtentsOffset = Vector3.new(0, 1, 0)
-                        
-                        local txt = Instance.new("TextLabel", bg)
-                        txt.Size = UDim2.new(1, 0, 0, 12); txt.Position = UDim2.new(0, 0, 0, 0); txt.BackgroundTransparency = 1; txt.Text = item.Name; txt.TextColor3 = exactColor; txt.TextStrokeTransparency = 0; txt.Font = Enum.Font.GothamBold; txt.TextSize = 11
-                        
-                        DropESP_Cache[item] = bg
-                    end
-                end
-            end
-        end
-    end
-end)
-
--- // RENDERSTEPPED PERFORMANCE PIPELINE PIPELINE (LAG FREE PIPELINE)
+-- // RENDERSTEPPED PERFORMANCE PIPELINE (LAG FREE PIPELINE)
 RunService.RenderStepped:Connect(function(delta)
     local localChar = LocalPlayer.Character
     local localRoot = localChar and localChar:FindFirstChild("HumanoidRootPart")
@@ -508,7 +488,6 @@ RunService.RenderStepped:Connect(function(delta)
         localRoot.CFrame = CFrame.new(localRoot.Position.X, workspace.Terrain.Position.Y - SinkDepth, localRoot.Position.Z)
     end
 
-    -- NO SPINNING DESYNC ANTI-LOCK: Allows player to run and jump smoothly while generating desynced server trajectory
     if FakeAntiAim and localChar and localRoot then
         for _, part in pairs(localChar:GetChildren()) do if part:IsA("BasePart") then part.CanCollide = true end end
         localRoot.AssemblyLinearVelocity = Vector3.new(math.random(-450, 450), 0, math.random(-450, 450))
@@ -538,7 +517,7 @@ RunService.RenderStepped:Connect(function(delta)
         else TracerLine.Visible = false end
     else TracerLine.Visible = false end
 
-    -- RE-OPTIMIZED AUTO-SCALING ESP MONITOR (CONSTANT REFRESH)
+    -- PLAYER ESP MONITOR
     for player, drawings in pairs(player_drawings) do
         local Char = player.Character
         local hum = Char and Char:FindFirstChild('Humanoid')
@@ -549,17 +528,15 @@ RunService.RenderStepped:Connect(function(delta)
             local rootpos, sizeScreen, on = Get2dWorld(root)
             
             if on then 
-                -- Calculating exact bounding height and width dynamically adjusted via Camera Projection 
                 local headHeightPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2, 0))
                 local feetHeightPos = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
                 
                 local boxHeight = math.abs(headHeightPos.Y - feetHeightPos.Y)
-                local boxWidth = boxHeight * 0.65 -- Perfect alignment layout proportion
+                local boxWidth = boxHeight * 0.65
 
                 local isTargeted = (SilentAimEnabled and player == CurrentAimbotTarget)
                 local espColor = isTargeted and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(255, 255, 255)
 
-                -- Dynamic Hollow Box Scaling
                 local box = drawings.box
                 box.Size = Vector2.new(boxWidth, boxHeight)
                 box.Position = Vector2.new(rootpos.X - boxWidth / 2, rootpos.Y - boxHeight / 2)
@@ -572,7 +549,6 @@ RunService.RenderStepped:Connect(function(delta)
                     TargetLine.Visible = true
                 end
 
-                -- Dynamic Health Bar Tracking
                 local hpbar = drawings.hpbar
                 local hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
                 hpbar.From = Vector2.new(box.Position.X - 6, box.Position.Y + boxHeight * (1 - hp))
@@ -580,7 +556,6 @@ RunService.RenderStepped:Connect(function(delta)
                 hpbar.Color = Color3.new(1 - hp, hp, 0)
                 hpbar.Visible = _G.EnabledHpBar or false
 
-                -- Auto-Font Scaling based on enemy relative tracking depth (Scan size alignment)
                 local scaledFontSize = math.clamp(math.floor(1400 / sizeScreen), 8, 11)
 
                 local name = drawings.name
@@ -602,9 +577,85 @@ RunService.RenderStepped:Connect(function(delta)
             for _, d in pairs(drawings) do d.Visible = false end
         end  
     end
+
+    -- ITEM DROPPED ESP PIPELINE (INTEGRATED SYSTEM)
+    local dropfolder = getDroppedFolder()
+    
+    -- ทำการล้างวาดเส้นไอเทมที่ถูกลบออกจากเกมไปแล้ว หรือเมื่อสั่งปิดฟังก์ชัน
+    for i, d in pairs(item_drawings) do
+        if not i or not i.Parent or not _G.EnabledItemDrop then
+            if d.box then d.box:Remove() end
+            if d.name then d.name:Remove() end
+            if d.dist then d.dist:Remove() end
+            item_drawings[i] = nil
+        end
+    end
+
+    -- สั่งลูปสแกนและวาดไอเทมถ้าปุ่มเปิดใช้งานอยู่
+    if _G.EnabledItemDrop and dropfolder then
+        for _, item in pairs(dropfolder:GetChildren()) do
+            if item:IsA("Model") and item:FindFirstChild("PickUpZone") and not item:GetAttribute('Locked') then
+                local itemesp = item_drawings[item]
+
+                if not itemesp and Drawing then 
+                    itemesp = {
+                        box = draw("Square", {Color = Color3.fromRGB(255, 255, 255), Thickness = 1, Filled = false}),
+                        name = draw("Text", {Color = Color3.fromRGB(255, 255, 255), Outline = true, Center = true, Size = 13}),
+                        dist = draw("Text", {Color = Color3.fromRGB(255, 255, 255), Outline = true, Center = true, Size = 11}),
+                    }
+                    item_drawings[item] = itemesp
+                end
+
+                if itemesp then
+                    local pickpos, sizeScreen, on = Get2dWorld(item.PickUpZone)
+                    local sizescale = math.clamp(200 / sizeScreen, 20, 60)
+                    local shouldShow = _G.EnabledItemDrop and on
+
+                    itemesp.box.Size = Vector2.new(sizescale, sizescale)
+                    itemesp.box.Position = Vector2.new(pickpos.X - sizescale/2, pickpos.Y - sizescale/2)
+                    itemesp.box.Visible = shouldShow
+
+                    itemesp.name.Text = item.Name
+                    itemesp.name.Position = Vector2.new(pickpos.X, pickpos.Y - sizescale/2 - 14)
+                    itemesp.name.Visible = shouldShow
+
+                    if item.Name ~= "Money" then
+                        local colorFound = false
+                        if ReplicatedStorage:FindFirstChild("Items") then
+                            for _, x in pairs(ReplicatedStorage.Items:GetChildren()) do 
+                                for _, b in pairs(x:GetChildren()) do 
+                                    if tostring(item.Name) == tostring(b.Name) then 
+                                        local rarityColor = GetColorFromRarity(b)
+                                        itemesp.box.Color = rarityColor
+                                        itemesp.name.Color = rarityColor
+                                        colorFound = true
+                                        break
+                                    end
+                                end
+                                if colorFound then break end
+                            end
+                        end
+                        if not colorFound then
+                            itemesp.box.Color = Color3.fromRGB(255, 255, 255)
+                            itemesp.name.Color = Color3.fromRGB(255, 255, 255)
+                        end
+                    else 
+                        itemesp.box.Color = Color3.fromRGB(85, 255, 127) -- ให้สีเงินเขียวตามสไตล์ของสคริปต์หลัก
+                        itemesp.name.Color = Color3.fromRGB(85, 255, 127)
+                    end
+
+                    local AmountItem = item:FindFirstChild("AmountBillboardGui") and item.AmountBillboardGui:FindFirstChild("TextLabel")
+                    itemesp.dist.Text = "[" .. (AmountItem and AmountItem.Text or "1") .. "]"
+                    itemesp.dist.Position = Vector2.new(pickpos.X, pickpos.Y + sizescale/2 + 2)
+                    itemesp.dist.Visible = shouldShow
+                end
+            end
+        end
+    end
 end)
 
 -- // LOOT MAGNET FILTER AND COMPILATION ENGINE
+local ItemDatabase = {}
 pcall(function() for _, obj in ipairs(ReplicatedStorage:GetDescendants()) do if obj:IsA("Tool") then local rarity = obj:GetAttribute("RarityName") or obj:GetAttribute("Rarity") or obj:GetAttribute("Tier"); if rarity then ItemDatabase[obj.Name] = rarity end end end end)
 
 local function getItemRarity(item)
