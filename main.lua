@@ -1,4 +1,4 @@
--- // Zaber candy🍬 [Full Integrated Script - English Only]
+-- // Zaber candy🍬 [Full Integrated Script - Optimized Performance]
 local WindUI = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/WindUI/refs/heads/main/dist/main.lua"))()
 
 local Players = game:GetService("Players")
@@ -12,6 +12,10 @@ local Stats = game:GetService("Stats")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+
+-- // UNCAP RENDER DISTANCE
+Camera.MaxVisibleRadius = math.huge
+settings().Rendering.DrawDistanceMax = math.huge
 
 -- // UI SETUP
 local Window = WindUI:CreateWindow({
@@ -27,7 +31,7 @@ local Window = WindUI:CreateWindow({
 })
 
 Window:EditOpenButton({ Enabled = false })
-WindUI:Notify({ Title = "System Verified", Content = "Welcome. All systems are fully operational.", Duration = 4 })
+WindUI:Notify({ Title = "System Verified", Content = "Welcome. High-Performance systems loaded.", Duration = 4 })
 
 loadstring(game:HttpGet('https://raw.githubusercontent.com/Yenixs/ToolScript/refs/heads/main/GuiToggle.luau'))()("rbxassetid://97643133348071", function()
     Window:Toggle()
@@ -107,211 +111,12 @@ _G.EnabledName = false
 _G.EnabledDistance = false
 
 local player_drawings = {}
-local HeadOff = Vector3.new(0, 0.5, 0)
-local LegOff = Vector3.new(0, 3, 0)
-
--- // ITEM INVENTORY ESP VARIABLES
-local ItemESP_Enabled = false
-local BillboardCache = {}
-local ItemESP_UpdateConnections = {}
-local WeaponDB = {}
-local PreloadedImages = {}
 
 -- // CORE VARIABLES (LOOT MAGNET)
 local MagnetConfig = { Enabled = false, Radius = 2000, Ignore = { Common = false, Uncommon = false, Rare = false, Epic = false, Legendary = false, Omega = false, Default = false } }
 local ItemDatabase = {}
 local ESP_Settings = { DroppedItems = false }
 local DropESP_Cache = {}
-
-
--- ==========================================
--- // ITEM ESP SCANNER & COMPILER ENGINE
--- ==========================================
-
-local function generateUniqueKey(tool)
-    if not tool or not tool:IsA("Tool") then return nil end
-    local itemId = tool:GetAttribute("ItemId") or tool:GetAttribute("Id")
-    if itemId and itemId ~= "" and (typeof(itemId) == "string" or typeof(itemId) == "number") then
-        return "ITEMID_" .. tostring(itemId)
-    end
-    local partsData = {}
-    for _, part in ipairs(tool:GetDescendants()) do
-        if part:IsA("SpecialMesh") and part.MeshId and part.MeshId ~= "" and part.MeshId ~= "rbxassetid://" then
-            table.insert(partsData, "MESH_"..part.MeshId.."|TEX_"..(part.TextureId or "NOTEX"))
-        elseif part:IsA("MeshPart") and part.MeshId and part.MeshId ~= "" and part.MeshId ~= "rbxassetid://" then
-            table.insert(partsData, "MESH_"..part.MeshId.."|TEX_"..(part.TextureID or "NOTEX"))
-        elseif part:IsA("Decal") and part.Texture and part.Texture ~= "" and part.Texture ~= "rbxassetid://" then
-            table.insert(partsData, "DECAL_"..part.Texture)
-        elseif part:IsA("Part") then
-            table.insert(partsData, "PART_"..part.Name.."_"..part.Size.X.."x"..part.Size.Y.."x"..part.Size.Z)
-        end
-    end
-    if #partsData > 0 then
-        table.sort(partsData)
-        return "MESHKEY_" .. table.concat(partsData, ";")
-    end
-    local displayName = tool:GetAttribute("DisplayName") or tool.Name
-    local toolName = tool.Name
-    local rarity = tool:GetAttribute("RarityName") or tool:GetAttribute("Rarity") or "Unknown"
-    local imageId = tool:GetAttribute("ImageId") or "NOIMAGE"
-    return "NAME_" .. displayName .. "_" .. toolName .. "_" .. rarity .. "_" .. imageId
-end
-
-local function registerItems(folder)
-    for _, tool in ipairs(folder:GetDescendants()) do
-        if not tool:IsA("Tool") then continue end
-        local key = generateUniqueKey(tool)
-        if not key then continue end
-        local displayName = tool:GetAttribute("DisplayName") or tool.Name
-        local imageId = tool:GetAttribute("ImageId") or "rbxassetid://7072725737"
-        local rarity = tool:GetAttribute("RarityName") or tool:GetAttribute("Rarity") or "Common"
-        WeaponDB[key] = {
-            Name = displayName,
-            Rarity = rarity,
-            ImageId = imageId,
-            ToolName = tool.Name,
-            Key = key
-        }
-        if imageId and imageId ~= "" and not PreloadedImages[imageId] then
-            PreloadedImages[imageId] = true
-            task.spawn(function()
-                pcall(function()
-                    ContentProvider:PreloadAsync({imageId})
-                end)
-            end)
-        end
-    end
-end
-
-pcall(function()
-    local itemsFolder = ReplicatedStorage:WaitForChild("Items", 5)
-    if itemsFolder then registerItems(itemsFolder) end
-    for _, obj in ipairs(ReplicatedStorage:GetChildren()) do
-        if obj:IsA("Folder") and (obj.Name:find("Weapon") or obj.Name:find("Item") or obj.Name:find("Tool")) then
-            registerItems(obj)
-        end
-    end
-    registerItems(game:GetService("StarterPack"))
-end)
-
-local function getWeaponInfo(tool)
-    if not tool or not tool:IsA("Tool") then return nil end
-    local key = generateUniqueKey(tool)
-    return WeaponDB[key]
-end
-
-local function createBillboardForPlayer(player)
-    if player == LocalPlayer or BillboardCache[player] then return end
-    local billboard, container, layout
-    local connections = {}
-
-    local function updateESP()
-        if not ItemESP_Enabled or not billboard or not billboard.Parent then return end
-        local currentTools = {}
-        
-        local function scan(folder)
-            if not folder then return end
-            for _, tool in ipairs(folder:GetChildren()) do
-                if tool:IsA("Tool") and tool.Name ~= "Fists" then
-                    local info = getWeaponInfo(tool)
-                    if info then
-                        table.insert(currentTools, info)
-                    end
-                end
-            end
-        end
-
-        local char = player.Character
-        if char then
-            scan(char)
-            local backpack = player:FindFirstChild("Backpack")
-            if backpack then scan(backpack) end
-        end
-
-        container:ClearAllChildren()
-        layout = Instance.new("UIGridLayout")
-        layout.CellSize = UDim2.new(0, 35, 0, 35)
-        layout.CellPadding = UDim2.new(0, 6, 0, 0)
-        layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-        layout.VerticalAlignment = Enum.VerticalAlignment.Center
-        layout.SortOrder = Enum.SortOrder.LayoutOrder
-        layout.Parent = container
-
-        for i, info in ipairs(currentTools) do
-            local img = Instance.new("ImageLabel")
-            img.Parent = container
-            img.Size = UDim2.new(0, 35, 0, 35)
-            img.BackgroundTransparency = 1
-            img.Image = info.ImageId or "rbxassetid://7072725737"
-            img.ScaleType = Enum.ScaleType.Fit
-            img.LayoutOrder = i
-            local color = RARITY_COLORS[info.Rarity] or Color3.fromRGB(255, 255, 255)
-            img.ImageColor3 = color:Lerp(Color3.new(1,1,1), 0.35)
-        end
-    end
-
-    local function setupBillboard()
-        local char = player.Character
-        if not char then return end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        
-        if BillboardCache[player] then
-            BillboardCache[player]:Destroy()
-        end
-        for _, conn in pairs(connections) do
-            if conn.Connected then conn:Disconnect() end
-        end
-        connections = {}
-
-        billboard = Instance.new("BillboardGui")
-        billboard.Name = "PlayerItemESP"
-        billboard.Adornee = hrp
-        billboard.Size = UDim2.new(0, 280, 0, 40)
-        billboard.StudsOffset = Vector3.new(0, -6.5, 0)
-        billboard.AlwaysOnTop = true
-        billboard.LightInfluence = 0
-        billboard.MaxDistance = math.huge -- [ปรับแก้] มองเห็นระยะไกลไร้ขีดจำกัดทั่วแมพ
-        billboard.Enabled = ItemESP_Enabled
-        billboard.Parent = hrp
-
-        container = Instance.new("Frame", billboard)
-        container.Size = UDim2.new(1, 0, 1, 0)
-        container.BackgroundTransparency = 1
-        
-        BillboardCache[player] = billboard
-        updateESP()
-
-        local backpack = player:FindFirstChild("Backpack")
-        if backpack then
-            table.insert(connections, backpack.ChildAdded:Connect(updateESP))
-            table.insert(connections, backpack.ChildRemoved:Connect(updateESP))
-        end
-
-        table.insert(connections, char.ChildAdded:Connect(function(child)
-            if child:IsA("Tool") then task.defer(updateESP) end
-        end))
-        table.insert(connections, char.ChildRemoved:Connect(function(child)
-            if child:IsA("Tool") then task.defer(updateESP) end
-        end))
-        table.insert(connections, player.ChildAdded:Connect(function(child)
-            if child.Name == "Backpack" then
-                task.wait()
-                table.insert(connections, child.ChildAdded:Connect(updateESP))
-                table.insert(connections, child.ChildRemoved:Connect(updateESP))
-                updateESP()
-            end
-        end))
-    end
-
-    if player.Character then task.spawn(setupBillboard) end
-    table.insert(connections, player.CharacterAdded:Connect(function()
-        task.wait(1)
-        setupBillboard()
-    end))
-    ItemESP_UpdateConnections[player] = connections
-end
-
 
 -- ==========================================
 -- // CONNECT UI TO INTERFACES
@@ -330,37 +135,17 @@ PlayerTab:Slider({ Title = "Speed Multiplier", Value = {Min = 0.05, Max = 0.15, 
 PlayerTab:Toggle({ Title = "Enable High Jump", Default = false, Callback = function(s) highJumpEnabled = s; local char = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait() local hum = char:FindFirstChildOfClass("Humanoid") if hum then hum.UseJumpPower = true; hum.JumpPower = math.clamp(s and highJumpPower or defaultJumpPower, 0, maxJumpPower) end end })
 PlayerTab:Slider({ Title = "High Jump Power", Value = {Min = 20, Max = maxJumpPower, Default = highJumpPower}, Step = 1, Callback = function(v) highJumpPower = tonumber(v); if highJumpEnabled then local char = LocalPlayer.Character if char then local hum = char:FindFirstChildOfClass("Humanoid") if hum then hum.JumpPower = math.clamp(highJumpPower, 0, maxJumpPower) end end end end })
 PlayerTab:Toggle({ Title = "Infinite Stamina", Default = false, Callback = function(s) infStamEnabled = s end })
-PlayerTab:Toggle({ Title = "Anti-Aim (Desync View)", Default = false, Callback = function(s) FakeAntiAim = s end })
+PlayerTab:Toggle({ Title = "Velocity Desync Anti-Aim", Default = false, Callback = function(s) FakeAntiAim = s end })
 PlayerTab:Toggle({ Title = "Underground Noclip", Default = false, Callback = function(s) SinkEnabled = s end })
 PlayerTab:Slider({ Title = "Underground Depth", Value = {Min = 1, Max = 100, Default = SinkDepth}, Step = 1, Callback = function(v) SinkDepth = tonumber(v) end })
 PlayerTab:Toggle({ Title = "Anti-Dead (Evasion under 25 HP)", Default = false, Callback = function(s) antiDeadEnabled = s end })
 
 -- ESP Tab
-ESPTab:Toggle({ Title = "Show Box", Default = false, Callback = function(s) _G.EnabledBox = s end })
+ESPTab:Toggle({ Title = "Show Box (Hollow & Dynamic)", Default = false, Callback = function(s) _G.EnabledBox = s end })
 ESPTab:Toggle({ Title = "Show Health", Default = false, Callback = function(s) _G.EnabledHpBar = s end })
-ESPTab:Toggle({ Title = "Show Name", Default = false, Callback = function(s) _G.EnabledName = s end })
+ESPTab:Toggle({ Title = "Show Name (Scaled Tiny)", Default = false, Callback = function(s) _G.EnabledName = s end })
 ESPTab:Toggle({ Title = "Show Distance (m)", Default = false, Callback = function(s) _G.EnabledDistance = s end })
-ESPTab:Toggle({ Title = "Show Dropped Items (Name Only)", Default = false, Callback = function(s) ESP_Settings.DroppedItems = s end })
-
--- [เพิ่มฟังก์ชันนี้เข้าไป] Toggle Item Inventory ESP ของคนอื่น
-ESPTab:Toggle({
-    Title = "Player Item Inventory ESP",
-    Desc = "ส่องดูไอเทมในกระเป๋าและในมือคนอื่น",
-    Default = false,
-    Callback = function(state)
-        ItemESP_Enabled = state
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer then
-                local billboard = BillboardCache[player]
-                if billboard then
-                    billboard.Enabled = state
-                elseif state then
-                    createBillboardForPlayer(player)
-                end
-            end
-        end
-    end
-})
+ESPTab:Toggle({ Title = "Show Dropped Items (Legacy Method)", Default = false, Callback = function(s) ESP_Settings.DroppedItems = s end })
 
 -- Auto Loot Tab
 LootTab:Toggle({ Title = "Enable Auto PickUp", Default = false, Callback = function(s) MagnetConfig.Enabled = s end })
@@ -434,6 +219,7 @@ local function IsHoldingAllowedGun(args)
     return false
 end
 
+-- // ADVANCED ANTI-ANTI-AIM RESOLVER (PRECISE ACCELERATION DETECTION)
 local function GetResolvedVelocity(target, root)
     if not root or not target.Character then return Vector3.zero end
     
@@ -441,7 +227,7 @@ local function GetResolvedVelocity(target, root)
     local trackingPart = (hum and hum.SeatPart) and hum.SeatPart or root
     
     if not TargetData[target] then
-        TargetData[target] = { LastPos = trackingPart.Position, LastTick = tick(), SmoothVel = Vector3.zero }
+        TargetData[target] = { LastPos = trackingPart.Position, LastTick = tick(), SmoothVel = Vector3.zero, LastVel = Vector3.zero }
     end
     
     local data = TargetData[target]
@@ -450,7 +236,7 @@ local function GetResolvedVelocity(target, root)
     local currentPos = trackingPart.Position
     
     local calculatedVel = Vector3.zero
-    if dt > 0.01 and dt < 1 then
+    if dt > 0.001 and dt < 1 then
         calculatedVel = (currentPos - data.LastPos) / dt
     end
     
@@ -460,17 +246,21 @@ local function GetResolvedVelocity(target, root)
     local engineVel = trackingPart.AssemblyLinearVelocity
     local realVel = engineVel
     
-    if engineVel.Magnitude > 250 or engineVel.Magnitude < 2 then
-        if calculatedVel.Magnitude > 1 then
+    -- Anti-Anti-Aim Overrider: Bypasses heavy desync desynchronization and spinning exploits
+    if engineVel.Magnitude > 150 or math.abs(engineVel.Y) > 150 or (engineVel - data.LastVel).Magnitude > 200 then
+        if calculatedVel.Magnitude > 0.1 then
             realVel = calculatedVel
+        else
+            realVel = Vector3.zero
         end
     end
     
-    if realVel.Magnitude > 500 then
-        realVel = realVel.Unit * 500
+    if realVel.Magnitude > 350 then
+        realVel = realVel.Unit * 350
     end
     
-    data.SmoothVel = data.SmoothVel:Lerp(realVel, 0.75)
+    data.LastVel = engineVel
+    data.SmoothVel = data.SmoothVel:Lerp(realVel, 0.85)
     return data.SmoothVel
 end
 
@@ -589,7 +379,7 @@ local function startAntiDeadLoop()
             hum.PlatformStand = true
             for _, part in pairs(char:GetChildren()) do if part:IsA("BasePart") then part.CanCollide = false end end
             root.Velocity = Vector3.zero
-            root.CFrame = CFrame.new(root.Position.X, workspace.Terrain.Position.Y - 50, root.Position.Z) * CFrame.Angles(0, tick() * 20, 0)
+            root.CFrame = CFrame.new(root.Position.X, workspace.Terrain.Position.Y - 50, root.Position.Z)
             RunService.Heartbeat:Wait()
         end
         isAntiDead = false 
@@ -630,32 +420,22 @@ local function Get2dWorld(part)
     return Vector2.new(0, 0), 0, false
 end
 
+-- // HIGH-PERFORMANCE LOW-LATENCY HOLLOW ESP BOX & SCALED SYSTEM
 local function CreateESP(player)
     if player == LocalPlayer then return end
     if player_drawings[player] then return end
     player_drawings[player] = {
-        box = draw("Square", {Visible = false, Color = Color3.fromRGB(255, 255, 255), Thickness = 1.5, Transparency = 1, Filled = false}),
-        hpbar = draw("Line", {Visible = false, Color = Color3.new(0, 1, 0), Thickness = 2}),
-        name = draw("Text", {Visible = false, Color = Color3.new(1, 1, 1), Size = 14, Center = true, Outline = true, OutlineColor = Color3.new(0, 0, 0), Text = player.Name}),
-        dist = draw("Text", {Visible = false, Color = Color3.new(1, 1, 1), Size = 14, Center = true, Outline = true, OutlineColor = Color3.new(0, 0, 0), Text = ""})
+        box = draw("Square", {Visible = false, Color = Color3.fromRGB(255, 255, 255), Thickness = 1.2, Transparency = 1, Filled = false}), -- Pure Hollow Empty Box
+        hpbar = draw("Line", {Visible = false, Color = Color3.new(0, 1, 0), Thickness = 1.5}),
+        name = draw("Text", {Visible = false, Color = Color3.new(1, 1, 1), Size = 10, Center = true, Outline = true, OutlineColor = Color3.new(0, 0, 0), Text = player.Name}), -- Dynamic small font size matching scan layout
+        dist = draw("Text", {Visible = false, Color = Color3.new(1, 1, 1), Size = 9, Center = true, Outline = true, OutlineColor = Color3.new(0, 0, 0), Text = ""})
     }
-    createBillboardForPlayer(player) -- เริ่มระบบสร้างบิลบอร์ดตรวจไอเทมเมื่อเจอผู้เล่น
 end
 
 local function RemoveESP(player)
     if player_drawings[player] then
         for _, drawing in pairs(player_drawings[player]) do if drawing.Remove then drawing:Remove() end end
         player_drawings[player] = nil
-    end
-    if BillboardCache[player] then
-        BillboardCache[player]:Destroy()
-        BillboardCache[player] = nil
-    end
-    if ItemESP_UpdateConnections[player] then
-        for _, conn in pairs(ItemESP_UpdateConnections[player]) do
-            if conn.Connected then conn:Disconnect() end
-        end
-        ItemESP_UpdateConnections[player] = nil
     end
 end
 
@@ -672,7 +452,7 @@ local function getDroppedFolder()
     return nil
 end
 
--- // DROPPED ITEMS INTERFACES (MAP DROPS)
+-- // DROPPED ITEMS LEGACY HOOK (UNCHANGED BY REQUEST)
 task.spawn(function()
     while task.wait(1) do
         if not ESP_Settings.DroppedItems then
@@ -711,7 +491,7 @@ task.spawn(function()
     end
 end)
 
--- // RENDERSTEPPED PIPELINE LOOP
+-- // RENDERSTEPPED PERFORMANCE PIPELINE PIPELINE (LAG FREE PIPELINE)
 RunService.RenderStepped:Connect(function(delta)
     local localChar = LocalPlayer.Character
     local localRoot = localChar and localChar:FindFirstChild("HumanoidRootPart")
@@ -728,9 +508,10 @@ RunService.RenderStepped:Connect(function(delta)
         localRoot.CFrame = CFrame.new(localRoot.Position.X, workspace.Terrain.Position.Y - SinkDepth, localRoot.Position.Z)
     end
 
+    -- NO SPINNING DESYNC ANTI-LOCK: Allows player to run and jump smoothly while generating desynced server trajectory
     if FakeAntiAim and localChar and localRoot then
-        localRoot.CFrame = localRoot.CFrame * CFrame.Angles(0, math.rad(math.random(-180,180)), 0)
-        localRoot.AssemblyLinearVelocity = Vector3.new(math.random(-500,500), math.random(-500,500), math.random(-500,500))
+        for _, part in pairs(localChar:GetChildren()) do if part:IsA("BasePart") then part.CanCollide = true end end
+        localRoot.AssemblyLinearVelocity = Vector3.new(math.random(-450, 450), 0, math.random(-450, 450))
     end
 
     FOVCircle.Position = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
@@ -757,6 +538,7 @@ RunService.RenderStepped:Connect(function(delta)
         else TracerLine.Visible = false end
     else TracerLine.Visible = false end
 
+    -- RE-OPTIMIZED AUTO-SCALING ESP MONITOR (CONSTANT REFRESH)
     for player, drawings in pairs(player_drawings) do
         local Char = player.Character
         local hum = Char and Char:FindFirstChild('Humanoid')
@@ -767,16 +549,20 @@ RunService.RenderStepped:Connect(function(delta)
             local rootpos, sizeScreen, on = Get2dWorld(root)
             
             if on then 
-                local headpos = Camera:WorldToViewportPoint(head.Position + HeadOff)
-                local legpos = Camera:WorldToViewportPoint(root.Position - LegOff)
+                -- Calculating exact bounding height and width dynamically adjusted via Camera Projection 
+                local headHeightPos = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 2, 0))
+                local feetHeightPos = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
                 
-                local box = drawings.box
-                box.Size = Vector2.new(1000 / sizeScreen, headpos.Y - legpos.Y)
-                box.Position = Vector2.new(rootpos.X - box.Size.X / 2, rootpos.Y - box.Size.Y / 2)
-                
+                local boxHeight = math.abs(headHeightPos.Y - feetHeightPos.Y)
+                local boxWidth = boxHeight * 0.65 -- Perfect alignment layout proportion
+
                 local isTargeted = (SilentAimEnabled and player == CurrentAimbotTarget)
                 local espColor = isTargeted and Color3.fromRGB(255, 0, 0) or Color3.fromRGB(255, 255, 255)
 
+                -- Dynamic Hollow Box Scaling
+                local box = drawings.box
+                box.Size = Vector2.new(boxWidth, boxHeight)
+                box.Position = Vector2.new(rootpos.X - boxWidth / 2, rootpos.Y - boxHeight / 2)
                 box.Color = espColor
                 box.Visible = _G.EnabledBox or false
 
@@ -786,20 +572,26 @@ RunService.RenderStepped:Connect(function(delta)
                     TargetLine.Visible = true
                 end
 
+                -- Dynamic Health Bar Tracking
                 local hpbar = drawings.hpbar
                 local hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
-                hpbar.From = Vector2.new(box.Position.X + box.Size.X + 5, box.Position.Y + box.Size.Y * (1 - hp))
-                hpbar.To   = Vector2.new(box.Position.X + box.Size.X + 5, box.Position.Y + box.Size.Y)
+                hpbar.From = Vector2.new(box.Position.X - 6, box.Position.Y + boxHeight * (1 - hp))
+                hpbar.To   = Vector2.new(box.Position.X - 6, box.Position.Y + boxHeight)
                 hpbar.Color = Color3.new(1 - hp, hp, 0)
                 hpbar.Visible = _G.EnabledHpBar or false
 
+                -- Auto-Font Scaling based on enemy relative tracking depth (Scan size alignment)
+                local scaledFontSize = math.clamp(math.floor(1400 / sizeScreen), 8, 11)
+
                 local name = drawings.name
-                name.Position = Vector2.new(box.Position.X + box.Size.X / 2, headpos.Y - 20)
+                name.Position = Vector2.new(box.Position.X + boxWidth / 2, box.Position.Y - (scaledFontSize + 4))
+                name.Size = scaledFontSize
                 name.Color = espColor
                 name.Visible = _G.EnabledName or false
 
                 local dist = drawings.dist
-                dist.Position = Vector2.new(box.Position.X + box.Size.X / 2, headpos.Y)
+                dist.Position = Vector2.new(box.Position.X + boxWidth / 2, box.Position.Y + boxHeight + 2)
+                dist.Size = scaledFontSize - 1
                 dist.Text = "[" .. tostring(math.floor((root.Position - localRoot.Position).Magnitude)) .. "m]"
                 dist.Color = espColor
                 dist.Visible = _G.EnabledDistance or false
